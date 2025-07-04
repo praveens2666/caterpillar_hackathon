@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login - Cat Operator Assistant</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body.dark-mode {
+            background: #181a1b !important;
+            color: #e0e0e0 !important;
+        }
+        .dark-mode .card, .dark-mode .modal-content, .dark-mode .table {
+            background: #23272b !important;
+            color: #e0e0e0 !important;
+        }
+        .dark-mode .table-bordered, .dark-mode .table-bordered th, .dark-mode .table-bordered td {
+            border-color: #444 !important;
+        }
+        .dark-mode .btn, .dark-mode .btn:focus {
+            border-color: #444 !important;
+        }
+        .dark-mode .form-control, .dark-mode .form-select {
+            background: #23272b !important;
+            color: #e0e0e0 !important;
+            border-color: #444 !important;
+        }
+        .dark-mode .form-control:focus, .dark-mode .form-select:focus {
+            background: #23272b !important;
+            color: #fff !important;
+        }
+        .dark-mode .bg-primary, .dark-mode .bg-success, .dark-mode .bg-warning, .dark-mode .bg-info, .dark-mode .bg-danger {
+            filter: brightness(0.85);
+        }
+        .dark-mode .alert-danger, .dark-mode .alert-success, .dark-mode .alert-warning, .dark-mode .alert-info {
+            background: #23272b !important;
+            color: #e0e0e0 !important;
+            border-color: #444 !important;
+        }
+        .dark-mode .modal-content {
+            background: #23272b !important;
+        }
+        .dark-mode .progress {
+            background: #222 !important;
+        }
+        .dark-mode .progress-bar {
+            background: #0d6efd !important;
+            color: #fff !important;
+        }
+        .dark-mode .text-dark { color: #e0e0e0 !important; }
+        .dark-mode .text-muted { color: #b0b0b0 !important; }
+        .dark-mode .bg-light { background: #23272b !important; }
+        .dark-mode .bg-white { background: #23272b !important; }
+        .dark-mode .btn-close { filter: invert(1); }
+        .theme-toggle {
+            position: absolute;
+            top: 18px;
+            right: 24px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+<button class="btn btn-outline-secondary theme-toggle" id="themeToggleBtn" title="Toggle dark/light mode">
+    <span id="themeIcon">🌙</span>
+</button>
+<div class="container mt-5" style="max-width: 400px;">
+    <h2 class="mb-4">Operator Login</h2>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="alert alert-danger">{{ messages[0] }}</div>
+      {% endif %}
+    {% endwith %}
+    <form method="post">
+        <div class="mb-3">
+            <label for="username" class="form-label">Username</label>
+            <input type="text" class="form-control" id="username" name="username" required>
+        </div>
+        <div class="mb-3">
+            <label for="password" class="form-label">Password</label>
+            <input type="password" class="form-control" id="password" name="password" required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Login</button>
+    </form>
+</div>
+<script>
+(function() {
+    const btn = document.getElementById('themeToggleBtn');
+    const icon = document.getElementById('themeIcon');
+    function setTheme(dark) {
+        if (dark) {
+            document.body.classList.add('dark-mode');
+            icon.textContent = '☀️';
+            localStorage.setItem('theme', 'dark');
+        } else {
+            document.body.classList.remove('dark-mode');
+            icon.textContent = '🌙';
+            localStorage.setItem('theme', 'light');
+        }
+    }
+    btn.addEventListener('click', function() {
+        setTheme(!document.body.classList.contains('dark-mode'));
+    });
+    setTheme(localStorage.getItem('theme') === 'dark');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heavy Vehicle Simulator</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter font for a clean look -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* Hide scrollbars */
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* Dark background */
+            color: #e2e8f0; /* Light text */
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        #dashboard-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Allow mouse events to pass through to canvas */
+            z-index: 10;
+        }
+        .dashboard-item {
+            background-color: rgba(30, 41, 59, 0.8); /* Slate-800 with transparency */
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            pointer-events: auto; /* Make dashboard items interactive */
+        }
+        #voice-assistant-controls {
+            position: absolute;
+            bottom: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        #voice-assistant-log {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            width: 300px;
+            max-height: 200px;
+            overflow-y: auto;
+            background-color: rgba(30, 41, 59, 0.8);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 20;
+            font-size: 0.875rem;
+        }
+        .log-entry {
+            margin-bottom: 0.5rem;
+        }
+        .log-entry.user {
+            color: #90cdf4; /* Blue-300 */
+        }
+        .log-entry.assistant {
+            color: #a7f3d0; /* Green-200 */
+        }
+        .log-entry.loading {
+            color: #fcd34d; /* Yellow-300 */
+        }
+        #tutorial-status {
+            position: absolute;
+            top: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(30, 41, 59, 0.9);
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 20;
+            font-size: 1rem;
+            font-weight: bold;
+            color: #a7f3d0; /* Green-200 */
+            display: none; /* Hidden by default */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="simulatorCanvas"></canvas>
+
+    <!-- Dashboard Overlay -->
+    <div id="dashboard-overlay">
+        <div class="absolute top-4 left-4 flex flex-col space-y-2">
+            <div class="dashboard-item">
+                <span class="font-bold text-blue-300">Speed:</span> <span id="speed-display">0 KM/H</span>
+            </div>
+            <div class="dashboard-item">
+                <span class="font-bold text-green-300">Gear:</span> <span id="gear-display">N</span>
+            </div>
+        </div>
+
+        <div class="absolute top-4 right-4 flex flex-col space-y-2 items-end">
+            <div class="dashboard-item">
+                <span class="font-bold text-yellow-300">Fuel:</span> <span id="fuel-display">100%</span>
+            </div>
+            <div class="dashboard-item">
+                <span class="font-bold text-red-300">Warnings:</span> <span id="warning-display">None</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tutorial Status Display -->
+    <div id="tutorial-status"></div>
+
+    <!-- Voice Assistant Controls -->
+    <div id="voice-assistant-controls">
+        <button id="start-voice-btn" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-full shadow-lg transition duration-300 ease-in-out transform hover:scale-105">
+            <svg class="w-6 h-6 inline-block mr-2" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd"></path></svg>
+            Start Voice Assistant ✨
+        </button>
+        <button id="start-tutorial-btn" class="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-full shadow-lg transition duration-300 ease-in-out transform hover:scale-105">
+            Start Tutorial 🎓
+        </button>
+        <div id="voice-status" class="text-sm text-gray-400">Click to speak</div>
+    </div>
+
+    <!-- Voice Assistant Log -->
+    <div id="voice-assistant-log">
+        <div class="font-bold text-lg mb-2 text-center text-purple-300">Voice Log</div>
+        <div id="log-content"></div>
+    </div>
+
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script type="module">
+        // --- Global Variables ---
+        let scene, camera, renderer;
+        let vehicleGroup; // This will hold all vehicle parts, including the cabin and external body
+        let obstacles = [];
+        let keys = {}; // To track pressed keys for movement
+        let mouse = { x: 0, y: 0 }; // Mouse position for camera control
+        let isDragging = false; // Flag for mouse drag
+        let vehicleSpeed = 0; // Current vehicle speed
+        let vehicleGear = 'N'; // Current vehicle gear
+        let isFirstVoiceActivation = true; // Flag to track first voice assistant activation
+        let isVoiceAssistantProcessing = false; // Flag to prevent multiple concurrent voice assistant requests
+        let obstacleWarningSpoken = false; // Flag to prevent repeated obstacle warnings
+
+        let interactiveObjects = []; // Array to store objects that can be clicked for explanation
+        let highlightedObject = null; // To keep track of the currently highlighted object
+        const highlightMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 }); // Green highlight
+
+        // --- Tutorial Variables ---
+        let inTutorialMode = false;
+        let currentTutorialStepIndex = -1;
+        const tutorialStatusDisplay = document.getElementById('tutorial-status');
+
+        // --- Dashboard Elements ---
+        const speedDisplay = document.getElementById('speed-display');
+        const gearDisplay = document.getElementById('gear-display');
+        const fuelDisplay = document.getElementById('fuel-display');
+        const warningDisplay = document.getElementById('warning-display');
+
+        // --- Voice Assistant Elements ---
+        const startVoiceBtn = document.getElementById('start-voice-btn');
+        const startTutorialBtn = document.getElementById('start-tutorial-btn');
+        const voiceStatus = document.getElementById('voice-status');
+        const logContent = document.getElementById('log-content');
+
+        // Speech Recognition and Synthesis setup
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const SpeechSynthesis = window.speechSynthesis;
+        let recognition;
+        let synth = SpeechSynthesis;
+
+        // --- Voice Assistant Knowledge Base (Simple Keyword-based) ---
+        const knowledgeBase = {
+            "about you": "I am a simulated voice assistant designed to help you learn about the parts of heavy vehicles. I can also use advanced AI to explain complex topics.",
+            "hello": "Hello there! How can I assist you today?",
+            "hi": "Hi! What would you like to know?",
+            "thank you": "You're welcome! Feel free to ask if you have more questions.",
+            "how are you": "I'm functioning perfectly, thank you for asking! How can I help you learn about heavy vehicles?",
+            "what can you do": "I can help you learn about heavy vehicle parts by voice or by clicking on them. I can also guide you through a tutorial.",
+            "warning obstacle ahead": "Warning! An obstacle has been detected in your path. Please adjust your driving.", // Added for direct warning
+            // New interior components for direct answers (can be expanded by LLM)
+            "cabin structure": "The cabin structure is the main enclosure protecting the operator, providing safety and housing all controls.",
+            "driver's seat": "The driver's seat is where the operator sits, designed for comfort and ergonomic control.",
+            "co-driver seat": "The co-driver or instructor seat provides space for another person, often for training purposes.",
+            "floor mats": "Floor mats provide grip and protect the cabin floor from dirt and wear.",
+            "anti-slip flooring": "Anti-slip flooring enhances safety by preventing slips, especially when entering or exiting.",
+            "roof liner": "The roof liner insulates the cabin and provides a finished interior look.",
+            "cabin lights": "Cabin lights illuminate the interior for visibility, especially during low light conditions.",
+            "rearview mirrors": "Rearview mirrors, both inside and outside, provide visibility of the vehicle's surroundings.",
+            "doors": "Doors allow entry and exit from the cabin and provide security.",
+            "manual windows": "Manual windows are operated by a hand crank.",
+            "power windows": "Power windows are operated by an electric switch.",
+            "lock mechanisms": "Locking mechanisms secure the doors when the vehicle is parked or in operation.",
+            "door storage compartments": "Door storage compartments provide space for small items.",
+            "emergency exit lever": "An emergency exit lever allows for quick egress in case of an emergency.",
+            "front windshield": "The front windshield provides the primary forward view for the operator.",
+            "wiper": "Wipers clear rain and debris from the windshield.",
+            "washer": "Washers spray fluid onto the windshield to assist wipers in cleaning.",
+            "side windows": "Side windows provide lateral visibility.",
+            "rear windows": "Rear windows offer visibility to the rear of the vehicle, often crucial for reversing or operating attachments.",
+            "sun visor": "The sun visor helps to block glare from the sun, improving driver visibility.",
+            "hvac": "HVAC stands for Heating, Ventilation, and Air Conditioning, controlling the cabin's temperature and air quality.",
+            "cabin air filter": "The cabin air filter cleans the air entering the cabin, removing dust and pollutants.",
+            "vents": "Vents direct airflow from the HVAC system into the cabin for heating, cooling, or defrosting.",
+            "defoggers": "Defoggers clear condensation from windows for better visibility.",
+            "dashboard": "The dashboard is the control panel in front of the driver, displaying vital information and housing controls.",
+            "instrument cluster": "The instrument cluster contains gauges and warning lights for monitoring vehicle status.",
+            "speedometer": "The speedometer indicates the vehicle's current speed.",
+            "tachometer": "The tachometer shows the engine's revolutions per minute (RPM).",
+            "fuel gauge": "The fuel gauge displays the amount of fuel remaining in the tank.",
+            "diesel level": "Diesel level is another term for the fuel gauge, specifically for diesel-powered vehicles.",
+            "coolant temperature gauge": "This gauge monitors the engine's coolant temperature to prevent overheating.",
+            "hydraulic oil temperature": "Indicates the temperature of the hydraulic fluid, crucial for system health.",
+            "transmission oil temperature": "Shows the temperature of the transmission fluid.",
+            "battery voltage indicator": "Displays the electrical system's voltage.",
+            "hour meter": "The hour meter tracks the total operating hours of the machine.",
+            "engine oil pressure gauge": "Monitors the engine's oil pressure.",
+            "check engine light": "A warning light indicating a problem with the engine or emissions system.",
+            "transmission warning": "Indicates an issue with the vehicle's transmission.",
+            "hydraulic system warning": "Alerts to a problem in the hydraulic system.",
+            "parking brake indicator": "Lights up when the parking brake is engaged.",
+            "seat belt warning": "Reminds the operator to fasten their seat belt.",
+            "brake system warning": "Alerts to an issue with the vehicle's braking system.",
+            "overheating alert": "Warns of dangerously high engine temperatures.",
+            "air filter blockage": "Indicates that the engine's air filter is clogged and needs replacement.",
+            "low fuel warning": "Alerts the operator when the fuel level is critically low.",
+            "ignition switch": "Used to start and stop the engine.",
+            "engine start-stop button": "A button used to start and stop the engine, often found in newer models.",
+            "headlight switch": "Controls the vehicle's headlights and worklights.",
+            "worklight switch": "Controls additional lights for illuminating the work area.",
+            "beacon light switch": "Activates the flashing beacon light for visibility.",
+            "hazard light switch": "Activates all turn signals simultaneously to warn other drivers.",
+            "fan speed knob": "Controls the speed of the HVAC fan.",
+            "temperature knob": "Adjusts the temperature of the air coming from the HVAC system.",
+            "defrost controls": "Controls to direct air to defrost windows.",
+            "ac controls": "Controls for the air conditioning system.",
+            "steering wheel": "The steering wheel is used to control the direction of the vehicle.",
+            "joystick controls": "Joysticks are multi-axis controllers used for precise operation of hydraulic attachments.",
+            "foot pedals": "Foot pedals are used for controlling acceleration, braking, and clutch engagement.",
+            "accelerator pedal": "Controls the engine's speed and vehicle acceleration.",
+            "brake pedal": "Used to slow down or stop the vehicle.",
+            "clutch pedal": "In manual transmissions, used to disengage the engine from the transmission for gear changes.",
+            "forward-neutral-reverse lever": "The FNR lever controls the vehicle's direction of travel (forward, neutral, reverse).",
+            "gear selector": "The gear selector allows the operator to choose different gears for the transmission.",
+            "transmission mode switch": "Switches between different transmission modes, such as economy or power.",
+            "loader arm joystick": "Controls the movement of the loader arm, typically for raising and lowering.",
+            "bucket tilt control": "Controls the angle of the bucket for scooping and dumping.",
+            "boom swing lever": "Controls the lateral movement or swing of the excavator boom.",
+            "extend lever": "Controls the extension and retraction of a telescopic boom.",
+            "stabilizer arm controls": "Controls the deployment and retraction of stabilizer arms for vehicle stability.",
+            "blade control lever": "Specifically for bulldozers, controls the angle and height of the dozer blade.",
+            "auxiliary hydraulic control switches": "Switches or levers for operating additional hydraulic attachments or functions.",
+            "door handle": "The door handle is used to open and close the cabin door.",
+            "window crank": "A window crank is used to manually open and close the side windows.",
+            "floor texture": "The floor texture provides grip and is designed for durability in a heavy vehicle cabin.",
+            "console": "The console refers to the side panels where many controls and levers are mounted.",
+            "warning symbols": "Warning symbols on the dashboard alert the operator to various system statuses or faults.",
+            "jcb logo": "The JCB logo identifies the manufacturer of the heavy vehicle."
+        };
+
+        // --- Tutorial Steps Definition ---
+        const tutorialSteps = [
+            {
+                instruction: "Welcome to the interactive tutorial! First, let's start the engine. Please click on the Ignition Switch.",
+                targetPartName: "ignition switch",
+                completionEvent: "click"
+            },
+            {
+                instruction: "Great! Now, let's learn to drive. Press the 'W' key to accelerate forward.",
+                targetPartName: null, // No specific part to click, but action is key press
+                completionEvent: "key_w_down"
+            },
+            {
+                instruction: "Excellent! You are moving. To slow down or stop, press the 'S' key.",
+                targetPartName: null,
+                completionEvent: "key_s_down"
+            },
+            {
+                instruction: "Well done! Now, let's try steering. Press the 'A' key to steer left.",
+                targetPartName: null,
+                completionEvent: "key_a_down"
+            },
+            {
+                instruction: "Good! Now press the 'D' key to steer right.",
+                targetPartName: null,
+                completionEvent: "key_d_down"
+            },
+            {
+                instruction: "You're getting the hang of it! Now, let's imagine you need to open the cabin door. Please click on the Door Handle.",
+                targetPartName: "door handle",
+                completionEvent: "click"
+            },
+            {
+                instruction: "Fantastic! The door is now open. To close it, click on the Door Handle again.",
+                targetPartName: "door handle",
+                completionEvent: "click"
+            },
+            {
+                instruction: "You've completed the basic controls tutorial! Feel free to explore the cabin by clicking on other parts, or drive around using W, A, S, D keys. You can also ask me questions anytime.",
+                targetPartName: null,
+                completionEvent: "tutorial_end"
+            }
+        ];
+
+        // --- Initialization Function ---
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x282c34); // Dark background for the scene
+
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('simulatorCanvas'), antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 2); // Soft white light
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1); // White light from a direction
+            directionalLight.position.set(5, 10, 7);
+            directionalLight.castShadow = true; // Enable shadows
+            scene.add(directionalLight);
+
+            // Ground Plane (Road)
+            const groundGeometry = new THREE.PlaneGeometry(200, 200); // Larger ground
+            const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x556b2f }); // Dark olive green
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2; // Rotate to lie flat
+            ground.receiveShadow = true; // Ground receives shadows
+            scene.add(ground);
+
+            // --- Vehicle Group and Internal Parts ---
+            vehicleGroup = new THREE.Group();
+            scene.add(vehicleGroup);
+
+            // Main Vehicle Body (External, for collision and general shape)
+            const vehicleBodyGeometry = new THREE.BoxGeometry(4, 3, 8);
+            const vehicleBodyMaterial = new THREE.MeshLambertMaterial({ color: 0x007bff, transparent: true, opacity: 0.05 }); // Even more transparent
+            const vehicleBody = new THREE.Mesh(vehicleBodyGeometry, vehicleBodyMaterial);
+            vehicleBody.position.y = 1.5;
+            vehicleBody.castShadow = true;
+            vehicleGroup.add(vehicleBody);
+
+            // Call function to create detailed cabin interior
+            createCabinInterior();
+
+            // Camera setup - positioned inside the cabin
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            // Adjusted camera position for a more "lorry truck" view
+            camera.position.set(0, 2.5, -1.0); // Lowered and slightly closer to dashboard
+            vehicleGroup.add(camera); // Make camera a child of the vehicle group
+
+            // Obstacles (Simple Boxes)
+            createObstacle(10, 0, -15);
+            createObstacle(-8, 0, -30);
+            createObstacle(5, 0, -45);
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            // Use 'click' for interactive parts, 'mousedown' for camera control
+            renderer.domElement.addEventListener('click', onCanvasClick);
+            renderer.domElement.addEventListener('mousedown', onMouseDown);
+            renderer.domElement.addEventListener('mouseup', onMouseUp);
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+
+
+            // Voice Assistant Event Listener
+            startVoiceBtn.addEventListener('click', toggleVoiceAssistant);
+            startTutorialBtn.addEventListener('click', startTutorial);
+
+            // Initial render
+            animate();
+        }
+
+        // --- Function to create detailed cabin interior based on image ---
+        function createCabinInterior() {
+            const cabinInteriorGroup = new THREE.Group();
+            vehicleGroup.add(cabinInteriorGroup); // Add interior to the main vehicle group
+
+            // Define new material colors for a more vibrant look
+            const interiorMaterial = new THREE.MeshLambertMaterial({ color: 0x607d8b }); // Blue Gray
+            const dashboardMaterial = new THREE.MeshLambertMaterial({ color: 0x78909c }); // Light Blue Gray
+            const controlMaterial = new THREE.MeshLambertMaterial({ color: 0x9e9e9e }); // Grey
+            const seatMaterial = new THREE.MeshLambertMaterial({ color: 0x546e7a }); // Dark Blue Gray
+            const windowFrameMaterial = new THREE.MeshLambertMaterial({ color: 0x455a64 }); // Darker Blue Gray
+            const windowGlassMaterial = new THREE.MeshLambertMaterial({ color: 0x87ceeb, transparent: true, opacity: 0.2 }); // Sky blue for windows, more transparent
+            const blackRubberMaterial = new THREE.MeshLambertMaterial({ color: 0x263238 }); // Very Dark Blue Gray (for floor, boots)
+            const handleMaterial = new THREE.MeshLambertMaterial({ color: 0x37474f }); // Even darker Blue Gray
+            const crankMaterial = new THREE.MeshLambertMaterial({ color: 0x757575 }); // Medium Grey
+            const mirrorMaterial = new THREE.MeshLambertMaterial({ color: 0xb0bec5, reflectivity: 0.8 }); // Light Grey Blue
+            const mirrorArmMaterial = new THREE.MeshLambertMaterial({ color: 0x607d8b }); // Blue Gray
+            const gaugeMaterial = new THREE.MeshLambertMaterial({ color: 0x424242 }); // Dark Grey
+            const needleMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // Red needle
+            const warningLightMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, emissive: 0xff0000 }); // Red
+            const symbolMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff }); // White symbols
+            const switchMaterial = new THREE.MeshLambertMaterial({ color: 0x78909c }); // Light Blue Gray (same as dashboard for consistency)
+            const jcbLogoMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // Yellow for JCB logo area
+
+
+            // --- Cabin Structure ---
+            const cabinWidth = 3.5;
+            const cabinHeight = 2.5;
+            const cabinDepth = 4;
+
+            // Floor (darker, anti-slip look)
+            const floor = new THREE.Mesh(new THREE.BoxGeometry(cabinWidth, 0.1, cabinDepth), blackRubberMaterial);
+            floor.position.set(0, 1.5, -1);
+            floor.name = "floor"; // Make floor clickable
+            cabinInteriorGroup.add(floor);
+            interactiveObjects.push(floor);
+
+            // Roof
+            const roof = new THREE.Mesh(new THREE.BoxGeometry(cabinWidth, 0.1, cabinDepth), interiorMaterial);
+            roof.position.set(0, 4.0, -1);
+            roof.name = "roof liner";
+            cabinInteriorGroup.add(roof);
+            interactiveObjects.push(roof);
+
+            // Back Wall
+            const backWall = new THREE.Mesh(new THREE.BoxGeometry(cabinWidth, cabinHeight, 0.1), interiorMaterial);
+            backWall.position.set(0, 2.75, 1);
+            backWall.name = "back wall";
+            cabinInteriorGroup.add(backWall);
+            interactiveObjects.push(backWall);
+
+            // A-Pillars (Front vertical frames)
+            const aPillarGeometry = new THREE.BoxGeometry(0.15, 2.5, 0.15);
+            const leftAPillar = new THREE.Mesh(aPillarGeometry, windowFrameMaterial);
+            leftAPillar.position.set(-cabinWidth / 2 + 0.1, 2.75, -2.8);
+            leftAPillar.rotation.z = -0.1; // Slight angle
+            leftAPillar.name = "A-pillar";
+            cabinInteriorGroup.add(leftAPillar);
+            interactiveObjects.push(leftAPillar);
+
+            const rightAPillar = new THREE.Mesh(aPillarGeometry, windowFrameMaterial);
+            rightAPillar.position.set(cabinWidth / 2 - 0.1, 2.75, -2.8);
+            rightAPillar.rotation.z = 0.1; // Slight angle
+            rightAPillar.name = "A-pillar";
+            cabinInteriorGroup.add(rightAPillar);
+            interactiveObjects.push(rightAPillar);
+
+
+            // Side Walls (Door Panels)
+            const doorPanelMaterial = new THREE.MeshLambertMaterial({ color: 0x383838 });
+            const doorThickness = 0.15;
+            const doorHeight = 2.2; // Slightly shorter than full cabin height
+            const doorLength = 3.5;
+
+            // Left Door Panel
+            const leftDoorPanel = new THREE.Mesh(new THREE.BoxGeometry(doorThickness, doorHeight, doorLength), doorPanelMaterial);
+            leftDoorPanel.position.set(-cabinWidth / 2 - doorThickness / 2, 2.75, -0.8); // Adjusted position
+            leftDoorPanel.name = "left door panel";
+            cabinInteriorGroup.add(leftDoorPanel);
+            interactiveObjects.push(leftDoorPanel);
+
+            // Right Door Panel
+            const rightDoorPanel = new THREE.Mesh(new THREE.BoxGeometry(doorThickness, doorHeight, doorLength), doorPanelMaterial);
+            rightDoorPanel.position.set(cabinWidth / 2 + doorThickness / 2, 2.75, -0.8); // Adjusted position
+            rightDoorPanel.name = "right door panel";
+            cabinInteriorGroup.add(rightDoorPanel);
+            interactiveObjects.push(rightDoorPanel);
+
+            // Door Handles (simple boxes)
+            const leftDoorHandle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.08), handleMaterial);
+            leftDoorHandle.position.set(-cabinWidth / 2 - doorThickness / 2 + 0.08, 2.8, -0.5);
+            leftDoorHandle.name = "door handle";
+            cabinInteriorGroup.add(leftDoorHandle);
+            interactiveObjects.push(leftDoorHandle);
+
+            const rightDoorHandle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.08), handleMaterial);
+            rightDoorHandle.position.set(cabinWidth / 2 + doorThickness / 2 - 0.08, 2.8, -0.5);
+            rightDoorHandle.name = "door handle";
+            cabinInteriorGroup.add(rightDoorHandle);
+            interactiveObjects.push(rightDoorHandle);
+
+            // Window Cranks (simple cylinder + box) - on left door
+            const crankBase = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.05, 8), crankMaterial);
+            crankBase.position.set(-cabinWidth / 2 - doorThickness / 2 + 0.08, 2.2, -0.8);
+            crankBase.name = "window crank";
+            cabinInteriorGroup.add(crankBase);
+            interactiveObjects.push(crankBase);
+            const crankHandle = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.2, 0.03), crankMaterial);
+            crankHandle.position.set(-cabinWidth / 2 - doorThickness / 2 + 0.08, 2.3, -0.8);
+            crankHandle.rotation.z = Math.PI / 4;
+            crankHandle.name = "window crank handle";
+            cabinInteriorGroup.add(crankHandle);
+            interactiveObjects.push(crankHandle);
+
+
+            // Window Glass (positioned between frames)
+            // Increased height and lowered position for truck-like windshield
+            const windshieldGlass = new THREE.Mesh(new THREE.BoxGeometry(cabinWidth - 0.5, 2.2, 0.01), windowGlassMaterial); // Increased height
+            windshieldGlass.position.set(0, 2.7, -2.87); // Lowered position
+            windshieldGlass.name = "front windshield";
+            cabinInteriorGroup.add(windshieldGlass);
+            interactiveObjects.push(windshieldGlass);
+
+            const sideWindowHeight = 1.6;
+            const sideWindowLength = 2.5;
+
+            // Left Side Window Glass
+            const leftSideGlass = new THREE.Mesh(new THREE.BoxGeometry(0.01, sideWindowHeight, sideWindowLength), windowGlassMaterial);
+            leftSideGlass.position.set(-cabinWidth / 2 + 0.08, 3.0, -0.8);
+            leftSideGlass.name = "left side window";
+            cabinInteriorGroup.add(leftSideGlass);
+            interactiveObjects.push(leftSideGlass);
+
+            // Right Side Window Glass
+            const rightSideGlass = new THREE.Mesh(new THREE.BoxGeometry(0.01, sideWindowHeight, sideWindowLength), windowGlassMaterial);
+            rightSideGlass.position.set(cabinWidth / 2 - 0.08, 3.0, -0.8);
+            rightSideGlass.name = "right side window";
+            cabinInteriorGroup.add(rightSideGlass);
+            interactiveObjects.push(rightSideGlass);
+
+            // Rear Window Glass
+            const rearWindowGlass = new THREE.Mesh(new THREE.BoxGeometry(cabinWidth - 0.3, 1.6, 0.01), windowGlassMaterial);
+            rearWindowGlass.position.set(0, 3.0, 0.97);
+            rearWindowGlass.name = "rear window";
+            cabinInteriorGroup.add(rearWindowGlass);
+            interactiveObjects.push(rearWindowGlass);
+
+
+            // Sun Visor (simple plane)
+            const sunVisor = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.1, 0.5), interiorMaterial);
+            sunVisor.position.set(0, 3.8, -2.5);
+            sunVisor.name = "sun visor";
+            cabinInteriorGroup.add(sunVisor);
+            interactiveObjects.push(sunVisor);
+
+            // Cabin Lights (simple spheres)
+            const lightGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+            const lightMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00, emissive: 0xffff00 }); // Yellow emissive
+            const cabinLight1 = new THREE.Mesh(lightGeometry, lightMaterial);
+            cabinLight1.position.set(-0.5, 3.9, -1);
+            cabinLight1.name = "cabin light";
+            cabinInteriorGroup.add(cabinLight1);
+            interactiveObjects.push(cabinLight1);
+            const cabinLight2 = new THREE.Mesh(lightGeometry, lightMaterial);
+            cabinLight2.position.set(0.5, 3.9, -1);
+            cabinLight2.name = "cabin light";
+            cabinInteriorGroup.add(cabinLight2);
+            interactiveObjects.push(cabinLight2);
+
+            // Rearview Mirrors (more detailed)
+            // Removed duplicate declaration of mirrorArmMaterial
+            // const mirrorArmMaterial = new THREE.MeshLambertMaterial({ color: 0x666666 });
+
+            // Interior Mirror
+            const interiorMirror = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 0.05), mirrorMaterial);
+            interiorMirror.position.set(0, 3.7, -2.5);
+            interiorMirror.name = "interior rearview mirror";
+            cabinInteriorGroup.add(interiorMirror);
+            interactiveObjects.push(interiorMirror);
+
+            // Side Mirrors (more robust arms)
+            const sideMirrorBodyGeometry = new THREE.BoxGeometry(0.1, 0.6, 0.9);
+            const sideMirrorArmGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.8);
+
+            // Left Side Mirror
+            const leftSideMirrorArm = new THREE.Mesh(sideMirrorArmGeometry, mirrorArmMaterial);
+            leftSideMirrorArm.position.set(-cabinWidth / 2 - 0.4, 3.5, -1.8);
+            leftSideMirrorArm.rotation.y = Math.PI / 8;
+            leftSideMirrorArm.name = "left side mirror arm";
+            cabinInteriorGroup.add(leftSideMirrorArm);
+            interactiveObjects.push(leftSideMirrorArm);
+            const leftSideMirrorBody = new THREE.Mesh(sideMirrorBodyGeometry, mirrorMaterial);
+            leftSideMirrorBody.position.set(-cabinWidth / 2 - 0.7, 3.5, -1.5);
+            leftSideMirrorBody.name = "left side mirror";
+            cabinInteriorGroup.add(leftSideMirrorBody);
+            interactiveObjects.push(leftSideMirrorBody);
+
+            // Right Side Mirror
+            const rightSideMirrorArm = new THREE.Mesh(sideMirrorArmGeometry, mirrorArmMaterial);
+            rightSideMirrorArm.position.set(cabinWidth / 2 + 0.4, 3.5, -1.8);
+            rightSideMirrorArm.rotation.y = -Math.PI / 8;
+            rightSideMirrorArm.name = "right side mirror arm";
+            cabinInteriorGroup.add(rightSideMirrorArm);
+            interactiveObjects.push(rightSideMirrorArm);
+            const rightSideMirrorBody = new THREE.Mesh(sideMirrorBodyGeometry, mirrorMaterial);
+            rightSideMirrorBody.position.set(cabinWidth / 2 + 0.7, 3.5, -1.5);
+            rightSideMirrorBody.name = "right side mirror";
+            cabinInteriorGroup.add(rightSideMirrorBody);
+            interactiveObjects.push(rightSideMirrorBody);
+
+
+            // --- Dashboard & Instrument Cluster ---
+            // Main Dashboard Panel (more complex shape)
+            const dashboardShape = new THREE.Shape();
+            dashboardShape.moveTo(-1.6, 0);
+            dashboardShape.lineTo(1.6, 0);
+            dashboardShape.lineTo(1.8, 0.6);
+            dashboardShape.lineTo(-1.8, 0.6);
+            dashboardShape.lineTo(-1.6, 0);
+
+            const extrudeSettings = {
+                steps: 1,
+                depth: 0.8,
+                bevelEnabled: true,
+                bevelThickness: 0.1,
+                bevelSize: 0.1,
+                bevelSegments: 2
+            };
+            const dashboardGeometry = new THREE.ExtrudeGeometry(dashboardShape, extrudeSettings);
+            const dashboard = new THREE.Mesh(dashboardGeometry, dashboardMaterial);
+            dashboard.position.set(0, 2.5, -2.8); // Lowered dashboard position
+            dashboard.rotation.x = -Math.PI / 2 + 0.05; // Less angled, more horizontal
+            dashboard.name = "dashboard";
+            cabinInteriorGroup.add(dashboard);
+            interactiveObjects.push(dashboard);
+
+            // Instrument Cluster Panel (recessed area)
+            const clusterPanel = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 0.1), new THREE.MeshLambertMaterial({ color: 0x1a1a1a }));
+            clusterPanel.position.set(-0.6, 3.0, -2.0); // Adjusted position relative to new dashboard
+            clusterPanel.name = "instrument cluster";
+            cabinInteriorGroup.add(clusterPanel);
+            interactiveObjects.push(clusterPanel);
+
+            // Gauges (simplified cylinders on dashboard)
+            const gaugeMaterialColor = new THREE.MeshLambertMaterial({ color: 0x222222 }); // Dark grey for gauge background
+            const needleMaterialColor = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // Red needle
+
+            // Speedometer
+            const speedometer = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.05, 32), gaugeMaterialColor);
+            speedometer.rotation.x = Math.PI / 2;
+            speedometer.position.set(-0.9, 3.0, -1.95); // Adjusted position
+            speedometer.name = "speedometer";
+            cabinInteriorGroup.add(speedometer);
+            interactiveObjects.push(speedometer);
+            const speedNeedle = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.15), needleMaterialColor);
+            speedNeedle.position.set(-0.9, 3.0, -1.92); // Adjusted position
+            speedNeedle.rotation.x = Math.PI / 2;
+            speedNeedle.name = "speedometer needle";
+            cabinInteriorGroup.add(speedNeedle);
+            interactiveObjects.push(speedNeedle); // Static for now
+
+            // Tachometer
+            const tachometer = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.05, 32), gaugeMaterialColor);
+            tachometer.rotation.x = Math.PI / 2;
+            tachometer.position.set(-0.4, 3.0, -1.95); // Adjusted position
+            tachometer.name = "tachometer";
+            cabinInteriorGroup.add(tachometer);
+            interactiveObjects.push(tachometer);
+
+            // Fuel Gauge
+            const fuelGauge = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.05, 32), gaugeMaterialColor);
+            fuelGauge.rotation.x = Math.PI / 2;
+            fuelGauge.position.set(0.1, 3.0, -1.95); // Adjusted position
+            fuelGauge.name = "fuel gauge";
+            cabinInteriorGroup.add(fuelGauge);
+            interactiveObjects.push(fuelGauge);
+
+            // Temperature Gauge
+            const tempGauge = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.05, 32), gaugeMaterialColor);
+            tempGauge.rotation.x = Math.PI / 2;
+            tempGauge.position.set(0.4, 3.0, -1.95); // Adjusted position
+            tempGauge.name = "coolant temperature gauge";
+            cabinInteriorGroup.add(tempGauge);
+            interactiveObjects.push(tempGauge);
+
+            // Warning Lights (small emissive spheres/boxes with symbols)
+            const warningLightMaterialColor = new THREE.MeshBasicMaterial({ color: 0xff0000, emissive: 0xff0000 }); // Red
+            const symbolMaterialColor = new THREE.MeshBasicMaterial({ color: 0xffffff }); // White symbols
+
+            // Check Engine Light (triangle with exclamation)
+            const checkEngineLight = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), warningLightMaterialColor);
+            checkEngineLight.position.set(-0.2, 3.0, -1.9); // Adjusted position
+            checkEngineLight.name = "check engine light";
+            cabinInteriorGroup.add(checkEngineLight);
+            interactiveObjects.push(checkEngineLight);
+            // Add a simple triangle on top
+            const triangleShape = new THREE.Shape();
+            triangleShape.moveTo(0, 0.05);
+            triangleShape.lineTo(-0.05, -0.05);
+            triangleShape.lineTo(0.05, -0.05);
+            triangleShape.lineTo(0, 0.05);
+            const triangleGeometry = new THREE.ShapeGeometry(triangleShape);
+            const checkEngineSymbol = new THREE.Mesh(triangleGeometry, symbolMaterialColor);
+            checkEngineSymbol.position.set(-0.2, 3.02, -1.88); // Adjusted position
+            checkEngineSymbol.scale.set(0.2, 0.2, 0.2);
+            checkEngineSymbol.name = "check engine light symbol";
+            cabinInteriorGroup.add(checkEngineSymbol);
+            interactiveObjects.push(checkEngineSymbol);
+
+
+            const parkingBrakeLight = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), warningLightMaterialColor);
+            parkingBrakeLight.position.set(-0.05, 3.0, -1.9); // Adjusted position
+            parkingBrakeLight.name = "parking brake indicator";
+            cabinInteriorGroup.add(parkingBrakeLight);
+            interactiveObjects.push(parkingBrakeLight);
+
+            const seatBeltWarning = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), warningLightMaterialColor);
+            seatBeltWarning.position.set(0.1, 3.0, -1.9); // Adjusted position
+            seatBeltWarning.name = "seat belt warning light";
+            cabinInteriorGroup.add(seatBeltWarning);
+            interactiveObjects.push(seatBeltWarning);
+
+            // Switches / Controls (simple buttons/boxes on dashboard)
+            const switchMaterialColor = new THREE.MeshLambertMaterial({ color: 0x78909c }); // Light Blue Gray
+            const buttonGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.05, 16);
+            const smallSwitchGeometry = new THREE.BoxGeometry(0.15, 0.15, 0.05);
+
+            const ignitionSwitch = new THREE.Mesh(buttonGeometry, switchMaterialColor);
+            ignitionSwitch.rotation.x = Math.PI / 2;
+            ignitionSwitch.position.set(-1.4, 3.0, -2.05); // Adjusted position
+            ignitionSwitch.name = "ignition switch";
+            cabinInteriorGroup.add(ignitionSwitch);
+            interactiveObjects.push(ignitionSwitch);
+
+            const headlightSwitch = new THREE.Mesh(smallSwitchGeometry, switchMaterialColor);
+            headlightSwitch.position.set(-1.4, 2.8, -2.05); // Adjusted position
+            headlightSwitch.name = "headlight switch";
+            cabinInteriorGroup.add(headlightSwitch);
+            interactiveObjects.push(headlightSwitch);
+
+            const wiperControl = new THREE.Mesh(smallSwitchGeometry, switchMaterialColor);
+            wiperControl.position.set(-1.4, 2.6, -2.05); // Adjusted position
+            wiperControl.name = "wiper control";
+            cabinInteriorGroup.add(wiperControl);
+            interactiveObjects.push(wiperControl);
+
+            const fanSpeedKnob = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.1, 16), switchMaterialColor);
+            fanSpeedKnob.rotation.x = Math.PI / 2;
+            fanSpeedKnob.position.set(1.0, 3.0, -2.05); // Adjusted position
+            fanSpeedKnob.name = "fan speed knob";
+            cabinInteriorGroup.add(fanSpeedKnob);
+            interactiveObjects.push(fanSpeedKnob);
+
+            const tempKnob = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.1, 16), switchMaterialColor);
+            tempKnob.rotation.x = Math.PI / 2;
+            tempKnob.position.set(1.0, 2.8, -2.05); // Adjusted position
+            tempKnob.name = "temperature knob";
+            cabinInteriorGroup.add(tempKnob);
+            interactiveObjects.push(tempKnob);
+
+            const acButton = new THREE.Mesh(buttonGeometry, switchMaterialColor);
+            acButton.rotation.x = Math.PI / 2;
+            acButton.position.set(1.0, 2.6, -2.05); // Adjusted position
+            acButton.name = "AC button";
+            cabinInteriorGroup.add(acButton);
+            interactiveObjects.push(acButton);
+
+            // --- Operational Controls ---
+            // Steering Wheel
+            const steeringWheelRimGeometry = new THREE.TorusGeometry(0.5, 0.05, 16, 32);
+            const steeringWheelSpokeGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.5);
+            const steeringWheelHubGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.1, 32);
+            const steeringWheelMaterialColor = new THREE.MeshLambertMaterial({ color: 0x111111 }); // Dark for wheel
+            const jcbLogoMaterialColor = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // Yellow for JCB logo area
+
+            const steeringWheel = new THREE.Group();
+            const rim = new THREE.Mesh(steeringWheelRimGeometry, steeringWheelMaterialColor);
+            steeringWheel.add(rim);
+
+            // Spokes - adjusted to match JCB wheel
+            const spokeTop = new THREE.Mesh(steeringWheelSpokeGeometry, steeringWheelMaterialColor);
+            spokeTop.position.set(0, 0.25, 0);
+            steeringWheel.add(spokeTop);
+            const spokeBottomLeft = new THREE.Mesh(steeringWheelSpokeGeometry, steeringWheelMaterialColor);
+            spokeBottomLeft.position.set(-0.2, -0.2, 0);
+            spokeBottomLeft.rotation.z = Math.PI / 6;
+            steeringWheel.add(spokeBottomLeft);
+            const spokeBottomRight = new THREE.Mesh(steeringWheelSpokeGeometry, steeringWheelMaterialColor);
+            spokeBottomRight.position.set(0.2, -0.2, 0);
+            spokeBottomRight.rotation.z = -Math.PI / 6;
+            steeringWheel.add(spokeBottomRight);
+
+            // Hub with JCB logo area
+            const hub = new THREE.Mesh(steeringWheelHubGeometry, jcbLogoMaterialColor);
+            steeringWheel.add(hub);
+
+            steeringWheel.position.set(0, 2.8, -2.2); // Lowered steering wheel position
+            steeringWheel.rotation.x = Math.PI / 2 - 0.1; // More upright angle
+            steeringWheel.name = "steering wheel";
+            cabinInteriorGroup.add(steeringWheel);
+            interactiveObjects.push(steeringWheel);
+
+            // Removed Steering Column as requested
+            // const steeringColumn = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.8, 16), controlMaterial);
+            // steeringColumn.rotation.x = Math.PI / 2 - 0.1; // Match steering wheel angle
+            // steeringColumn.position.set(0, 2.3, -1.8); // Adjusted position
+            // steeringColumn.name = "steering column";
+            // cabinInteriorGroup.add(steeringColumn);
+            // interactiveObjects.push(steeringColumn);
+
+
+            // Foot Pedals (more realistic shapes)
+            const pedalMaterialColor = new THREE.MeshLambertMaterial({ color: 0x666666 });
+            const acceleratorShape = new THREE.Shape();
+            acceleratorShape.moveTo(0, 0);
+            acceleratorShape.lineTo(0.3, 0);
+            acceleratorShape.lineTo(0.3, 0.5);
+            acceleratorShape.lineTo(0, 0.5);
+            acceleratorShape.lineTo(0, 0);
+            const acceleratorGeometry = new THREE.ExtrudeGeometry(acceleratorShape, { steps: 1, depth: 0.1, bevelEnabled: false });
+
+            const acceleratorPedal = new THREE.Mesh(acceleratorGeometry, pedalMaterialColor);
+            acceleratorPedal.position.set(0.6, 1.6, -1.8);
+            acceleratorPedal.rotation.x = Math.PI / 2; // Lay flat
+            acceleratorPedal.name = "accelerator pedal";
+            cabinInteriorGroup.add(acceleratorPedal);
+            interactiveObjects.push(acceleratorPedal);
+
+            const brakeShape = new THREE.Shape();
+            brakeShape.moveTo(0, 0);
+            brakeShape.lineTo(0.4, 0);
+            brakeShape.lineTo(0.4, 0.6);
+            brakeShape.lineTo(0, 0.6);
+            brakeShape.lineTo(0, 0);
+            const brakeGeometry = new THREE.ExtrudeGeometry(brakeShape, { steps: 1, depth: 0.1, bevelEnabled: false });
+
+            const brakePedal = new THREE.Mesh(brakeGeometry, pedalMaterialColor);
+            brakePedal.position.set(0.1, 1.6, -1.8);
+            brakePedal.rotation.x = Math.PI / 2; // Lay flat
+            brakePedal.name = "brake pedal";
+            cabinInteriorGroup.add(brakePedal);
+            interactiveObjects.push(brakePedal);
+
+            const clutchPedal = new THREE.Mesh(brakeGeometry, pedalMaterialColor); // Reusing brake geometry for clutch
+            clutchPedal.position.set(-0.4, 1.6, -1.8);
+            clutchPedal.rotation.x = Math.PI / 2; // Lay flat
+            clutchPedal.name = "clutch pedal";
+            cabinInteriorGroup.add(clutchPedal);
+            interactiveObjects.push(clutchPedal);
+
+            // FNR Lever (Forward-Neutral-Reverse) with boot
+            const fnrLever = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.7, 0.15), controlMaterial);
+            fnrLever.position.set(-1.0, 2.5, -1.0); // Near driver's left
+            fnrLever.name = "forward-neutral-reverse lever";
+            cabinInteriorGroup.add(fnrLever);
+            interactiveObjects.push(fnrLever);
+            const fnrBoot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 0.4, 16), blackRubberMaterial);
+            fnrBoot.position.set(-1.0, 1.9, -1.0);
+            fnrBoot.name = "FNR lever boot";
+            cabinInteriorGroup.add(fnrBoot);
+            interactiveObjects.push(fnrBoot);
+
+
+            // Hydraulic Control Levers / Joysticks (Right Side Console)
+            const rightConsoleMaterial = new THREE.MeshLambertMaterial({ color: 0x383838 });
+            const rightConsole = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.5, 2.0), rightConsoleMaterial);
+            rightConsole.position.set(1.5, 2.25, -0.5);
+            rightConsole.name = "right side console";
+            cabinInteriorGroup.add(rightConsole);
+            interactiveObjects.push(rightConsole);
+
+            const joystickBaseGeometry = new THREE.CylinderGeometry(0.3, 0.3, 0.2, 16);
+            const joystickStickGeometry = new THREE.BoxGeometry(0.1, 0.8, 0.1);
+            const bootMaterialColor = new THREE.MeshLambertMaterial({ color: 0x222222 });
+
+            // Loader Arm Joystick (right side, main joystick)
+            const loaderArmJoystick = new THREE.Group();
+            const loaderBase = new THREE.Mesh(joystickBaseGeometry, controlMaterial);
+            const loaderStick = new THREE.Mesh(joystickStickGeometry, controlMaterial);
+            loaderStick.position.y = 0.4;
+            loaderArmJoystick.add(loaderBase);
+            loaderArmJoystick.add(loaderStick);
+            loaderArmJoystick.position.set(1.0, 2.0, -0.5);
+            loaderArmJoystick.name = "loader arm joystick";
+            cabinInteriorGroup.add(loaderArmJoystick);
+            interactiveObjects.push(loaderArmJoystick);
+
+            const loaderArmBoot = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 0.4, 16), bootMaterialColor);
+            loaderArmBoot.position.set(1.0, 1.8, -0.5);
+            loaderArmBoot.name = "loader arm joystick boot";
+            cabinInteriorGroup.add(loaderArmBoot);
+            interactiveObjects.push(loaderArmBoot);
+
+            // Gear Selector / Transmission Mode Switch (right side, next to main joystick)
+            const gearSelector = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.8, 0.2), controlMaterial);
+            gearSelector.position.set(0.7, 2.3, 0.5);
+            gearSelector.name = "gear selector";
+            cabinInteriorGroup.add(gearSelector);
+            interactiveObjects.push(gearSelector);
+            const gearSelectorBoot = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 0.3, 16), bootMaterialColor);
+            gearSelectorBoot.position.set(0.7, 1.8, 0.5);
+            gearSelectorBoot.name = "gear selector boot";
+            cabinInteriorGroup.add(gearSelectorBoot);
+            interactiveObjects.push(gearSelectorBoot);
+
+            // Auxiliary Hydraulic Control Switches (small panel on right console)
+            const auxPanel = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.8, 0.1), dashboardMaterial);
+            auxPanel.position.set(1.5, 2.5, -1.5);
+            auxPanel.rotation.y = Math.PI / 6; // Slightly angled
+            auxPanel.name = "auxiliary control panel";
+            cabinInteriorGroup.add(auxPanel);
+            interactiveObjects.push(auxPanel);
+
+            const auxSwitch1 = new THREE.Mesh(smallSwitchGeometry, switchMaterialColor);
+            auxSwitch1.position.set(1.5, 2.8, -1.4);
+            auxSwitch1.rotation.y = Math.PI / 6;
+            auxSwitch1.name = "auxiliary switch 1";
+            cabinInteriorGroup.add(auxSwitch1);
+            interactiveObjects.push(auxSwitch1);
+
+            const auxSwitch2 = new THREE.Mesh(smallSwitchGeometry, switchMaterialColor);
+            auxSwitch2.position.set(1.5, 2.6, -1.4);
+            auxSwitch2.rotation.y = Math.PI / 6;
+            auxSwitch2.name = "auxiliary switch 2";
+            cabinInteriorGroup.add(auxSwitch2);
+            interactiveObjects.push(auxSwitch2);
+
+
+            // Driver's Seat (with plastic cover look)
+            const seatBaseGeometry = new THREE.BoxGeometry(1.5, 0.5, 1.5);
+            const seatBackGeometry = new THREE.BoxGeometry(1.5, 1.5, 0.3);
+            const seatMaterialDark = new THREE.MeshLambertMaterial({ color: 0x444444 });
+            const plasticCoverMaterial = new THREE.MeshLambertMaterial({ color: 0xeeeeee, transparent: true, opacity: 0.5 }); // White translucent
+
+            const seatBase = new THREE.Mesh(seatBaseGeometry, seatMaterialDark);
+            seatBase.position.set(0, 1.7, 0.5);
+            seatBase.name = "driver's seat base";
+            interactiveObjects.push(seatBase);
+
+            const seatBack = new THREE.Mesh(seatBackGeometry, seatMaterialDark);
+            seatBack.position.set(0, 2.7, -0.2);
+            seatBack.rotation.x = Math.PI / 10;
+            seatBack.name = "driver's seat back";
+            interactiveObjects.push(seatBack);
+
+            const driverSeat = new THREE.Group();
+            driverSeat.add(seatBase);
+            driverSeat.add(seatBack);
+
+            // Add plastic cover
+            const plasticCover = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 1.4), plasticCoverMaterial);
+            plasticCover.position.set(0, 1.95, 0.5);
+            plasticCover.name = "driver's seat plastic cover";
+            driverSeat.add(plasticCover);
+            interactiveObjects.push(plasticCover);
+            const plasticCoverBack = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 0.2), plasticCoverMaterial);
+            plasticCoverBack.position.set(0, 2.7, -0.1);
+            plasticCoverBack.rotation.x = Math.PI / 10;
+            plasticCoverBack.name = "driver's seat back cover";
+            driverSeat.add(plasticCoverBack);
+            interactiveObjects.push(plasticCoverBack);
+
+            cabinInteriorGroup.add(driverSeat);
+
+            // Co-Driver / Instructor Seat (simplified, without plastic cover)
+            const coDriverSeatBase = new THREE.Mesh(seatBaseGeometry, seatMaterialDark);
+            coDriverSeatBase.position.set(2.0, 1.7, 0.5);
+            coDriverSeatBase.name = "co-driver seat base";
+            interactiveObjects.push(coDriverSeatBase);
+            const coDriverSeatBack = new THREE.Mesh(seatBackGeometry, seatMaterialDark);
+            coDriverSeatBack.position.set(2.0, 2.7, -0.2);
+            coDriverSeatBack.rotation.x = Math.PI / 10;
+            coDriverSeatBack.name = "co-driver seat back";
+            interactiveObjects.push(coDriverSeatBack);
+
+            const coDriverSeat = new THREE.Group();
+            coDriverSeat.add(coDriverSeatBase);
+            coDriverSeat.add(coDriverSeatBack);
+            coDriverSeat.name = "co-driver seat";
+            cabinInteriorGroup.add(coDriverSeat);
+            interactiveObjects.push(coDriverSeat);
+        }
+
+
+        // --- Helper to create obstacles ---
+        function createObstacle(x, y, z) {
+            const obstacleGeometry = new THREE.BoxGeometry(3, 3, 3);
+            const obstacleMaterial = new THREE.MeshLambertMaterial({ color: 0x8b0000 }); // Dark Red
+            const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
+            obstacle.position.set(x, y + 1.5, z); // Place on the ground
+            obstacle.castShadow = true;
+            obstacle.receiveShadow = true;
+            scene.add(obstacle);
+            obstacles.push(obstacle);
+        }
+
+        // --- Event Handlers ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onKeyDown(event) {
+            keys[event.key.toLowerCase()] = true;
+
+            if (inTutorialMode) {
+                const currentStep = tutorialSteps[currentTutorialStepIndex];
+                if (currentStep && currentStep.completionEvent === `key_${event.key.toLowerCase()}_down`) {
+                    advanceTutorial();
+                }
+            }
+        }
+
+        function onKeyUp(event) {
+            keys[event.key.toLowerCase()] = false;
+        }
+
+        let raycaster = new THREE.Raycaster();
+        let mouseVector = new THREE.Vector2();
+
+        function onCanvasClick(event) {
+            // Calculate mouse position in normalized device coordinates (-1 to +1)
+            mouseVector.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouseVector.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            // Update the raycaster with the camera and mouse position
+            raycaster.setFromCamera(mouseVector, camera);
+
+            // Calculate objects intersecting the ray
+            // We only want to intersect with objects within the vehicleGroup
+            const intersects = raycaster.intersectObjects(vehicleGroup.children, true);
+
+            if (intersects.length > 0) {
+                // Find the first intersected object that has a name property (i.e., it's an interactive part)
+                let clickedObject = null;
+                for (let i = 0; i < intersects.length; i++) {
+                    if (intersects[i].object.name) {
+                        clickedObject = intersects[i].object;
+                        break;
+                    }
+                }
+
+                if (clickedObject) {
+                    // Highlight the clicked object
+                    highlightObject(clickedObject);
+
+                    // If in tutorial mode, check if this click completes the current step
+                    if (inTutorialMode) {
+                        const currentStep = tutorialSteps[currentTutorialStepIndex];
+                        if (currentStep && currentStep.completionEvent === "click" && currentStep.targetPartName === clickedObject.name) {
+                            advanceTutorial();
+                        } else {
+                            speak(`Please click on the ${currentStep.targetPartName}.`);
+                        }
+                    } else {
+                        // If not in tutorial, explain the part
+                        processVoiceCommand(clickedObject.name);
+                    }
+                }
+            }
+        }
+
+        // For camera rotation, we still need mousedown/mouseup/mousemove
+        function onMouseDown(event) {
+            // Only start dragging if it's not a click on an interactive object (handled by onCanvasClick)
+            // This is a simple heuristic; a more robust solution would involve checking `intersects` in mousedown too.
+            // For now, if we're not in tutorial mode and not clicking specific UI elements, assume camera drag.
+            if (!inTutorialMode && event.target === renderer.domElement && !event.target.closest('.dashboard-item, #voice-assistant-controls, #voice-assistant-log')) {
+                 isDragging = true;
+                 mouse.x = event.clientX;
+                 mouse.y = event.clientY;
+            }
+        }
+
+        function onMouseUp(event) {
+            isDragging = false;
+        }
+
+        function onMouseMove(event) {
+            if (!isDragging) return;
+
+            const deltaX = event.clientX - mouse.x;
+            const deltaY = event.clientY - mouse.y;
+
+            const rotationSpeed = 0.005;
+
+            camera.rotation.y -= deltaX * rotationSpeed;
+            camera.rotation.x -= deltaY * rotationSpeed;
+            camera.rotation.x = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, camera.rotation.x));
+
+            mouse.x = event.clientX;
+            mouse.y = event.clientY;
+        }
+
+        // --- Object Highlighting Functions ---
+        function highlightObject(object) {
+            // If there's a previously highlighted object, revert its material
+            if (highlightedObject && highlightedObject.originalMaterial) {
+                highlightedObject.material = highlightedObject.originalMaterial;
+            }
+
+            // Store the original material and apply the highlight material
+            object.originalMaterial = object.material;
+            object.material = highlightMaterial;
+            highlightedObject = object;
+
+            // Set a timeout to revert the highlight after a short period
+            setTimeout(() => {
+                if (highlightedObject === object) { // Only revert if it's still the current highlight
+                    unhighlightObject();
+                }
+            }, 1000); // Highlight for 1 second
+        }
+
+        function unhighlightObject() {
+            if (highlightedObject && highlightedObject.originalMaterial) {
+                highlightedObject.material = highlightedObject.originalMaterial;
+                highlightedObject = null;
+            }
+        }
+
+        // --- Voice Assistant Functions ---
+        async function processVoiceCommand(command) {
+            let responseFound = false;
+            // First, check local knowledge base for quick answers
+            for (const keyword in knowledgeBase) {
+                if (command.includes(keyword)) {
+                    speak(knowledgeBase[keyword]);
+                    responseFound = true;
+                    break;
+                }
+            }
+
+            // If not found in local knowledge base, try Gemini API
+            if (!responseFound) {
+                if (isVoiceAssistantProcessing) {
+                    speak("I'm already processing a request. Please wait a moment.");
+                    return;
+                }
+
+                isVoiceAssistantProcessing = true;
+                voiceStatus.textContent = "Thinking... ✨";
+                logMessage("Assistant: Thinking... ✨", "loading");
+
+                try {
+                    const prompt = `Explain "${command}" in the context of a heavy vehicle like a bulldozer or JCB. Focus on its function and importance for the driver/operator. Keep the explanation concise and informative, around 2-3 sentences.`;
+                    let chatHistory = [];
+                    chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                    const payload = { contents: chatHistory };
+                    const apiKey = "AIzaSyAbc6qt2dzvyUc5nDGXN0l-XaxBT80FV_o"; // Leave this as-is; Canvas will provide it at runtime.
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        const text = result.candidates[0].content.parts[0].text;
+                        speak(text);
+                    } else {
+                        speak("I'm sorry, I couldn't find information on that. Please try asking about a different part or rephrase your question.");
+                    }
+                } catch (error) {
+                    console.error("Gemini API error:", error);
+                    speak("I encountered an error while trying to get information. Please check your internet connection or try again later.");
+                } finally {
+                    isVoiceAssistantProcessing = false;
+                    voiceStatus.textContent = "Click to speak";
+                }
+            }
+        }
+
+        function toggleVoiceAssistant() {
+            if (!SpeechRecognition) {
+                speak("Speech recognition is not supported in this browser. Please try Chrome or Edge.");
+                voiceStatus.textContent = "Not supported in this browser.";
+                return;
+            }
+
+            if (recognition && recognition.listening) {
+                recognition.stop();
+                voiceStatus.textContent = "Voice Assistant Off";
+                startVoiceBtn.textContent = "Start Voice Assistant ✨";
+                logMessage("Voice Assistant Off", "assistant");
+            } else {
+                recognition = new SpeechRecognition();
+                recognition.continuous = false; // Listen for a single phrase
+                recognition.lang = 'en-US';
+                recognition.interimResults = false; // Only return final results
+                recognition.maxAlternatives = 1;
+
+                recognition.onstart = () => {
+                    voiceStatus.textContent = "Listening...";
+                    startVoiceBtn.textContent = "Stop Voice Assistant ✨";
+                    logMessage("Listening...", "assistant");
+                };
+
+                recognition.onresult = (event) => {
+                    const speechResult = event.results[0][0].transcript.toLowerCase();
+                    logMessage(`You: ${speechResult}`, "user");
+                    processVoiceCommand(speechResult);
+                    // voiceStatus.textContent = "Click to speak"; // Reset status after result is handled by processVoiceCommand
+                    // startVoiceBtn.textContent = "Start Voice Assistant ✨";
+                };
+
+                recognition.onerror = (event) => {
+                    console.error("Speech recognition error:", event.error);
+                    voiceStatus.textContent = `Error: ${event.error}`;
+                    speak("I encountered an error. Please try again.");
+                    logMessage(`Error: ${event.error}`, "assistant");
+                    startVoiceBtn.textContent = "Start Voice Assistant ✨";
+                    isVoiceAssistantProcessing = false; // Reset processing flag on error
+                };
+
+                recognition.onend = () => {
+                    if (voiceStatus.textContent === "Listening...") { // If it wasn't stopped manually or processing
+                        voiceStatus.textContent = "Click to speak";
+                        startVoiceBtn.textContent = "Start Voice Assistant ✨";
+                    }
+                };
+
+                recognition.start();
+
+                // Initial greeting only on the very first activation
+                if (isFirstVoiceActivation && !inTutorialMode) { // Only speak if not in tutorial
+                    speak("Welcome to the Heavy Vehicle Simulator! You are now inside the cabin. Use W, A, S, D keys to drive. Drag your mouse to look around. Now, you can ask about any vehicle part you see, or start the tutorial.");
+                    isFirstVoiceActivation = false;
+                }
+            }
+        }
+
+        function speak(text) {
+            if (synth.speaking) {
+                synth.cancel(); // Stop any ongoing speech
+            }
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            utterance.pitch = 1;
+            utterance.rate = 1;
+            utterance.volume = 1;
+            utterance.onend = () => {
+                // console.log("Speech finished");
+            };
+            utterance.onerror = (event) => {
+                console.error("Speech synthesis error:", event.error);
+            };
+            synth.speak(utterance);
+            logMessage(`Assistant: ${text}`, "assistant");
+        }
+
+        function logMessage(message, type) {
+            const entry = document.createElement('div');
+            entry.classList.add('log-entry', type);
+            entry.textContent = message;
+            logContent.prepend(entry); // Add to the top
+            // Keep log content from getting too long
+            if (logContent.children.length > 10) {
+                logContent.removeChild(logContent.lastChild);
+            }
+        }
+
+        // --- Tutorial Functions ---
+        function startTutorial() {
+            if (inTutorialMode) {
+                speak("Tutorial already in progress.");
+                return;
+            }
+            inTutorialMode = true;
+            currentTutorialStepIndex = -1; // Reset to -1 to start at step 0 after advanceTutorial
+            tutorialStatusDisplay.style.display = 'block';
+            startTutorialBtn.textContent = "Stop Tutorial 🛑";
+            startTutorialBtn.removeEventListener('click', startTutorial);
+            startTutorialBtn.addEventListener('click', stopTutorial);
+
+            speak("Starting the tutorial. Please follow my instructions.");
+            setTimeout(advanceTutorial, 2000); // Give a moment before first instruction
+        }
+
+        function stopTutorial() {
+            inTutorialMode = false;
+            currentTutorialStepIndex = -1;
+            tutorialStatusDisplay.style.display = 'none';
+            unhighlightObject(); // Clear any highlights
+            startTutorialBtn.textContent = "Start Tutorial 🎓";
+            startTutorialBtn.removeEventListener('click', stopTutorial);
+            startTutorialBtn.addEventListener('click', startTutorial);
+            speak("Tutorial stopped. You can now freely explore the simulator.");
+        }
+
+        function advanceTutorial() {
+            unhighlightObject(); // Clear highlight from previous step
+
+            currentTutorialStepIndex++;
+            if (currentTutorialStepIndex < tutorialSteps.length) {
+                const currentStep = tutorialSteps[currentTutorialStepIndex];
+                tutorialStatusDisplay.textContent = `Tutorial: ${currentStep.instruction}`;
+                speak(currentStep.instruction);
+
+                if (currentStep.targetPartName) {
+                    // Find the object to highlight
+                    const targetObject = interactiveObjects.find(obj => obj.name === currentStep.targetPartName);
+                    if (targetObject) {
+                        highlightObject(targetObject);
+                    } else {
+                        console.warn(`Tutorial target part not found: ${currentStep.targetPartName}`);
+                    }
+                }
+            } else {
+                // Tutorial finished
+                stopTutorial();
+            }
+        }
+
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Vehicle Movement
+            const moveSpeed = 0.1;
+            const rotationSpeed = 0.02;
+
+            // Apply movement to the vehicleGroup
+            if (keys['w']) {
+                vehicleGroup.translateZ(-moveSpeed); // Move forward along its local Z-axis
+                vehicleSpeed = Math.min(50, vehicleSpeed + 0.5); // Increase speed
+                vehicleGear = 'D';
+            } else if (keys['s']) {
+                vehicleGroup.translateZ(moveSpeed); // Move backward along its local Z-axis
+                vehicleSpeed = Math.max(-20, vehicleSpeed - 0.5); // Decrease speed/reverse
+                vehicleGear = 'R';
+            } else {
+                // Decelerate when no forward/backward key is pressed
+                if (vehicleSpeed > 0) vehicleSpeed = Math.max(0, vehicleSpeed - 0.2);
+                if (vehicleSpeed < 0) vehicleSpeed = Math.min(0, vehicleSpeed + 0.2);
+                if (Math.abs(vehicleSpeed) < 0.1) { // Snap to 0 if very small
+                    vehicleSpeed = 0;
+                    vehicleGear = 'N';
+                }
+            }
+
+            if (keys['a']) {
+                vehicleGroup.rotation.y += rotationSpeed; // Rotate vehicle group
+            }
+            if (keys['d']) {
+                vehicleGroup.rotation.y -= rotationSpeed; // Rotate vehicle group
+            }
+
+            // Update dashboard
+            speedDisplay.textContent = `${Math.round(Math.abs(vehicleSpeed))} KM/H`;
+            gearDisplay.textContent = vehicleGear;
+
+            // Simple collision detection (Bounding Box)
+            // Use the main vehicle body for collision detection
+            const vehicleBodyMesh = vehicleGroup.children[0]; // Assuming vehicleBody is the first child
+            const vehicleBox = new THREE.Box3().setFromObject(vehicleBodyMesh);
+            let collisionDetected = false;
+            for (const obstacle of obstacles) {
+                const obstacleBox = new THREE.Box3().setFromObject(obstacle);
+                if (vehicleBox.intersectsBox(obstacleBox)) {
+                    collisionDetected = true;
+                    // Simple response: prevent further movement into obstacle
+                    if (keys['w']) vehicleGroup.translateZ(moveSpeed);
+                    if (keys['s']) vehicleGroup.translateZ(-moveSpeed);
+                    break;
+                }
+            }
+
+            // Update warning display and trigger voice alert
+            if (collisionDetected) {
+                warningDisplay.textContent = 'Obstacle Ahead!';
+                warningDisplay.classList.remove('text-green-300');
+                warningDisplay.classList.add('text-red-300');
+                if (!obstacleWarningSpoken) {
+                    speak("Warning! Obstacle ahead!");
+                    obstacleWarningSpoken = true; // Set flag to true to prevent repeated speaking
+                }
+            } else {
+                warningDisplay.textContent = 'None';
+                warningDisplay.classList.remove('text-red-300');
+                warningDisplay.classList.add('text-green-300');
+                obstacleWarningSpoken = false; // Reset flag when no obstacle is detected
+            }
+
+            // Since the camera is a child of vehicleGroup, it moves automatically.
+            // No need to update camera position here.
+
+            renderer.render(scene, camera);
+        }
+
+        // Start the simulation when the window loads
+        window.onload = function () {
+            init();
+            // Initial instruction to prompt user to click for voice assistant
+            voiceStatus.textContent = "Click 'Start Voice Assistant' or 'Start Tutorial' to begin.";
+        };
+
+    </script>
+</body>
+</html>

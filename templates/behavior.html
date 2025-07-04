@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cat Operator Assistant - Machine Behavior</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body.dark-mode {
+            background: #181a1b !important;
+            color: #e0e0e0 !important;
+        }
+        .dark-mode .card, .dark-mode .modal-content, .dark-mode .table {
+            background: #23272b !important;
+            color: #e0e0e0 !important;
+        }
+        .dark-mode .table-bordered, .dark-mode .table-bordered th, .dark-mode .table-bordered td {
+            border-color: #444 !important;
+        }
+        .dark-mode .btn, .dark-mode .btn:focus {
+            border-color: #444 !important;
+        }
+        .dark-mode .form-control, .dark-mode .form-select {
+            background: #23272b !important;
+            color: #e0e0e0 !important;
+            border-color: #444 !important;
+        }
+        .dark-mode .form-control:focus, .dark-mode .form-select:focus {
+            background: #23272b !important;
+            color: #fff !important;
+        }
+        .dark-mode .bg-primary, .dark-mode .bg-success, .dark-mode .bg-warning, .dark-mode .bg-info, .dark-mode .bg-danger {
+            filter: brightness(0.85);
+        }
+        .dark-mode .alert-danger, .dark-mode .alert-success, .dark-mode .alert-warning, .dark-mode .alert-info {
+            background: #23272b !important;
+            color: #e0e0e0 !important;
+            border-color: #444 !important;
+        }
+        .dark-mode .modal-content {
+            background: #23272b !important;
+        }
+        .dark-mode .progress {
+            background: #222 !important;
+        }
+        .dark-mode .progress-bar {
+            background: #0d6efd !important;
+            color: #fff !important;
+        }
+        .dark-mode .text-dark { color: #e0e0e0 !important; }
+        .dark-mode .text-muted { color: #b0b0b0 !important; }
+        .dark-mode .bg-light { background: #23272b !important; }
+        .dark-mode .bg-white { background: #23272b !important; }
+        .dark-mode .btn-close { filter: invert(1); }
+        .theme-toggle {
+            position: absolute;
+            top: 18px;
+            right: 24px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+<button class="btn btn-outline-secondary theme-toggle" id="themeToggleBtn" title="Toggle dark/light mode">
+    <span id="themeIcon">🌙</span>
+</button>
+<div class="container mt-4">
+    <h1>Machine Behavior Analysis</h1>
+    <nav class="mb-4">
+        <a href="/" class="btn btn-primary">Dashboard</a>
+        <a href="/safety" class="btn btn-secondary">Safety</a>
+        <a href="/incident" class="btn btn-warning">Incident Log</a>
+        <a href="/training" class="btn btn-info">Training Hub</a>
+        
+        <span class="float-end">Logged in as: {{ session['username'] }} | <a href="/logout">Logout</a></span>
+    </nav>
+    <!-- Work Session Section (Row Above Main Content) -->
+    <div class="row mb-4">
+      <div class="col-md-4">
+        <div class="card mb-2">
+          <div class="card-header bg-primary text-white">Login Time</div>
+          <div class="card-body">
+            <span id="loginTime">{{ login_time }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card mb-2">
+          <div class="card-header bg-success text-white">Working Time</div>
+          <div class="card-body">
+            <span id="workingTime">00:00:00</span>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-header bg-warning text-dark">Break Time</div>
+          <div class="card-body">
+            <span id="breakTime">00:00:00</span>
+            <button id="breakBtn" class="btn btn-outline-primary ms-3">Have a Break</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- End Work Session Section -->
+    <ul class="list-group">
+        {% for w in warnings %}
+            <li class="list-group-item list-group-item-danger">{{ w }}</li>
+        {% endfor %}
+        {% if warnings|length == 0 %}
+            <li class="list-group-item list-group-item-success">No unusual behavior detected.</li>
+        {% endif %}
+    </ul>
+    <!-- Machine Behavior Section (Real-Time Graphs) -->
+    {% if machine %}
+    <div class="card mt-4">
+      <div class="card-header bg-danger text-white">Machine Behavior (Real-Time)</div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <canvas id="fuelChart"></canvas>
+            <div id="fuelWarning" class="text-danger fw-bold"></div>
+          </div>
+          <div class="col-md-6 mb-3">
+            <canvas id="engineTempChart"></canvas>
+            <div id="engineTempWarning" class="text-danger fw-bold"></div>
+          </div>
+          <div class="col-md-6 mb-3">
+            <canvas id="hydraulicTempChart"></canvas>
+            <div id="hydraulicTempWarning" class="text-danger fw-bold"></div>
+          </div>
+          <div class="col-md-6 mb-3">
+            <canvas id="mileageChart"></canvas>
+            <div id="mileageWarning" class="text-danger fw-bold"></div>
+          </div>
+          <div class="col-md-6 mb-3">
+            <canvas id="engineHoursChart"></canvas>
+            <div id="engineHoursWarning" class="text-danger fw-bold"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      function getRandomInRange(min, max) {
+        return Math.random() * (max - min) + min;
+      }
+      function getTimeLabel() {
+        const d = new Date();
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      }
+      let fuel = Number('{{ machine.fuel_level|default(80)|float }}') || 80;
+      let engineTemp = getRandomInRange(70, 90);
+      let hydraulicTemp = getRandomInRange(50, 70);
+      let mileage = Number('{{ machine.mileage|default(1000)|float }}') || 1000;
+      let engineHours = Number('{{ machine.hours_used|default(200)|float }}') || 200;
+
+      const fuelData = [fuel];
+      const engineTempData = [engineTemp];
+      const hydraulicTempData = [hydraulicTemp];
+      const mileageData = [mileage];
+      const engineHoursData = [engineHours];
+      const labels = [getTimeLabel()];
+
+      let errorTick = 0;
+      let errorActive = { fuel: false, engineTemp: false, hydraulicTemp: false };
+
+      function maybeInjectError() {
+        if (errorTick % getRandomInRange(2, 4) < 1) {
+          const errType = Math.floor(getRandomInRange(0, 3));
+          if (errType === 0) errorActive.fuel = true;
+          if (errType === 1) errorActive.engineTemp = true;
+          if (errType === 2) errorActive.hydraulicTemp = true;
+        }
+        if (errorActive.fuel && errorTick % getRandomInRange(1, 2) < 1) errorActive.fuel = false;
+        if (errorActive.engineTemp && errorTick % getRandomInRange(1, 2) < 1) errorActive.engineTemp = false;
+        if (errorActive.hydraulicTemp && errorTick % getRandomInRange(1, 2) < 1) errorActive.hydraulicTemp = false;
+      }
+
+      const fuelChart = new Chart(document.getElementById('fuelChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: labels.slice(), datasets: [{ label: 'Fuel Level (%)', data: fuelData, borderColor: 'blue', fill: false }] },
+        options: { scales: { x: { title: { display: true, text: 'Time' } }, y: { min: 0, max: 100, ticks: { stepSize: 10 } } }, animation: false }
+      });
+      const engineTempChart = new Chart(document.getElementById('engineTempChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: labels.slice(), datasets: [{ label: 'Engine Temp (°C)', data: engineTempData, borderColor: 'red', fill: false }] },
+        options: { scales: { x: { title: { display: true, text: 'Time' } }, y: { min: 60, max: 120, ticks: { stepSize: 5 } } }, animation: false }
+      });
+      const hydraulicTempChart = new Chart(document.getElementById('hydraulicTempChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: labels.slice(), datasets: [{ label: 'Hydraulic Temp (°C)', data: hydraulicTempData, borderColor: 'orange', fill: false }] },
+        options: { scales: { x: { title: { display: true, text: 'Time' } }, y: { min: 40, max: 100, ticks: { stepSize: 5 } } }, animation: false }
+      });
+      const mileageChart = new Chart(document.getElementById('mileageChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: labels.slice(), datasets: [{ label: 'Mileage (km)', data: mileageData, borderColor: 'green', fill: false }] },
+        options: { scales: { x: { title: { display: true, text: 'Time' } }, y: { min: Math.floor(mileage - 2), max: Math.ceil(mileage + 2), ticks: { stepSize: 1 } } }, animation: false }
+      });
+      const engineHoursChart = new Chart(document.getElementById('engineHoursChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: labels.slice(), datasets: [{ label: 'Engine Hours', data: engineHoursData, borderColor: 'purple', fill: false }] },
+        options: { scales: { x: { title: { display: true, text: 'Time' } }, y: { min: Math.floor(engineHours - 1), max: Math.ceil(engineHours + 1), ticks: { stepSize: 0.2 } } }, animation: false }
+      });
+
+      function updateCharts() {
+        errorTick++;
+        maybeInjectError();
+        // More visible changes
+        let fuelDrop = getRandomInRange(0.2, 1.2);
+        let tempDelta = getRandomInRange(-2, 2);
+        let hydDelta = getRandomInRange(-1, 1);
+        let mileageDelta = getRandomInRange(0.05, 0.2);
+        let hoursDelta = getRandomInRange(0.01, 0.03);
+        if (errorActive.fuel && Math.random() < 0.7) fuelDrop += getRandomInRange(2, 5);
+        if (errorActive.engineTemp && Math.random() < 0.7) tempDelta += getRandomInRange(10, 25);
+        if (errorActive.hydraulicTemp && Math.random() < 0.7) hydDelta += getRandomInRange(8, 18);
+        fuel = Math.max(0, fuel - fuelDrop);
+        engineTemp += tempDelta;
+        hydraulicTemp += hydDelta;
+        mileage += mileageDelta;
+        engineHours += hoursDelta;
+        engineTemp = Math.max(60, Math.min(engineTemp, 120));
+        hydraulicTemp = Math.max(40, Math.min(hydraulicTemp, 100));
+        // X axis labels: real clock time
+        labels.push(getTimeLabel());
+        // Keep only last 30 points
+        [fuelData, engineTempData, hydraulicTempData, mileageData, engineHoursData, labels].forEach(arr => { while (arr.length > 30) arr.shift(); });
+        // Update y axis for mileage/engine hours
+        mileageChart.options.scales.y.min = Math.floor(mileage - 2);
+        mileageChart.options.scales.y.max = Math.ceil(mileage + 2);
+        engineHoursChart.options.scales.y.min = Math.floor(engineHours - 1);
+        engineHoursChart.options.scales.y.max = Math.ceil(engineHours + 1);
+        // Update charts
+        fuelData.push(fuel);
+        engineTempData.push(engineTemp);
+        hydraulicTempData.push(hydraulicTemp);
+        mileageData.push(mileage);
+        engineHoursData.push(engineHours);
+        fuelChart.data.labels = labels.slice();
+        fuelChart.data.datasets[0].data = fuelData.slice();
+        fuelChart.update();
+        engineTempChart.data.labels = labels.slice();
+        engineTempChart.data.datasets[0].data = engineTempData.slice();
+        engineTempChart.update();
+        hydraulicTempChart.data.labels = labels.slice();
+        hydraulicTempChart.data.datasets[0].data = hydraulicTempData.slice();
+        hydraulicTempChart.update();
+        mileageChart.data.labels = labels.slice();
+        mileageChart.data.datasets[0].data = mileageData.slice();
+        mileageChart.update();
+        engineHoursChart.data.labels = labels.slice();
+        engineHoursChart.data.datasets[0].data = engineHoursData.slice();
+        engineHoursChart.update();
+        // Warnings
+        document.getElementById('fuelWarning').textContent = fuel < 10 ? 'Warning: Low Fuel!' : '';
+        document.getElementById('engineTempWarning').textContent = engineTemp > 105 ? 'Warning: Engine Overheating!' : '';
+        document.getElementById('hydraulicTempWarning').textContent = hydraulicTemp > 90 ? 'Warning: Hydraulic Temp High!' : '';
+        document.getElementById('mileageWarning').textContent = mileage - Math.floor(mileage) > 0.9 ? 'Warning: Maintenance Due Soon!' : '';
+        document.getElementById('engineHoursWarning').textContent = engineHours > 5000 ? 'Warning: Engine Service Overdue!' : '';
+      }
+      setInterval(updateCharts, 30000); // Update every 30 seconds
+    });
+    </script>
+    {% endif %}
+    <!-- End Machine Behavior Section -->
+</div>
+<script>
+// Timer logic with DB sync
+var workingSeconds = parseInt("{{ working_seconds|default(0) }}");
+var breakSeconds = parseInt("{{ break_seconds|default(0) }}");
+var onBreak = ("{{ on_break|default('false') }}" === "True" || "{{ on_break|default('false') }}" === "true");
+let workingInterval = null;
+let breakInterval = null;
+
+function pad(n) { return n < 10 ? '0' + n : n; }
+function formatTime(sec) {
+    let h = Math.floor(sec / 3600);
+    let m = Math.floor((sec % 3600) / 60);
+    let s = sec % 60;
+    return pad(h) + ':' + pad(m) + ':' + pad(s);
+}
+function updateWorking() {
+    document.getElementById('workingTime').textContent = formatTime(workingSeconds);
+}
+function updateBreak() {
+    document.getElementById('breakTime').textContent = formatTime(breakSeconds);
+}
+function syncSession() {
+    fetch('/update_session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            working_seconds: workingSeconds,
+            break_seconds: breakSeconds,
+            on_break: onBreak
+        })
+    });
+}
+function startWorking() {
+    if (workingInterval) return;
+    workingInterval = setInterval(() => {
+        workingSeconds++;
+        updateWorking();
+        syncSession();
+    }, 1000);
+}
+function stopWorking() {
+    clearInterval(workingInterval);
+    workingInterval = null;
+}
+function startBreak() {
+    if (breakInterval) return;
+    breakInterval = setInterval(() => {
+        breakSeconds++;
+        updateBreak();
+        syncSession();
+    }, 1000);
+}
+function stopBreak() {
+    clearInterval(breakInterval);
+    breakInterval = null;
+}
+document.addEventListener('DOMContentLoaded', function() {
+    updateWorking();
+    updateBreak();
+    let btn = document.getElementById('breakBtn');
+    if (onBreak === true || onBreak === 'true') {
+        btn.textContent = 'Resume Task';
+        stopWorking();
+        startBreak();
+        onBreak = true;
+    } else {
+        btn.textContent = 'Have a Break';
+        stopBreak();
+        startWorking();
+        onBreak = false;
+    }
+    btn.addEventListener('click', function() {
+        if (!onBreak) {
+            // Start break
+            stopWorking();
+            startBreak();
+            this.textContent = 'Resume Task';
+            onBreak = true;
+        } else {
+            // Resume work
+            stopBreak();
+            startWorking();
+            this.textContent = 'Have a Break';
+            onBreak = false;
+        }
+        syncSession();
+    });
+});
+</script>
+<script>
+(function() {
+    const btn = document.getElementById('themeToggleBtn');
+    const icon = document.getElementById('themeIcon');
+    function setTheme(dark) {
+        if (dark) {
+            document.body.classList.add('dark-mode');
+            icon.textContent = '☀️';
+            localStorage.setItem('theme', 'dark');
+        } else {
+            document.body.classList.remove('dark-mode');
+            icon.textContent = '🌙';
+            localStorage.setItem('theme', 'light');
+        }
+    }
+    btn.addEventListener('click', function() {
+        setTheme(!document.body.classList.contains('dark-mode'));
+    });
+    setTheme(localStorage.getItem('theme') === 'dark');
+})();
+</script>
+</body>
+</html>
