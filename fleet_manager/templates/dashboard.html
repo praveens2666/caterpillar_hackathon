@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Fleet Manager Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body.dark-mode {
+            background: #181a1b !important;
+            color: #e0e0e0 !important;
+        }
+        .dark-mode .card, .dark-mode .modal-content, .dark-mode .table {
+            background: #23272b !important;
+            color: #e0e0e0 !important;
+        }
+        .dark-mode .table-bordered, .dark-mode .table-bordered th, .dark-mode .table-bordered td {
+            border-color: #444 !important;
+        }
+        .dark-mode .btn, .dark-mode .btn:focus {
+            border-color: #444 !important;
+        }
+        .dark-mode .form-control, .dark-mode .form-select {
+            background: #23272b !important;
+            color: #e0e0e0 !important;
+            border-color: #444 !important;
+        }
+        .dark-mode .form-control:focus, .dark-mode .form-select:focus {
+            background: #23272b !important;
+            color: #fff !important;
+        }
+        .dark-mode .bg-primary, .dark-mode .bg-success, .dark-mode .bg-warning, .dark-mode .bg-info, .dark-mode .bg-danger {
+            filter: brightness(0.85);
+        }
+        .dark-mode .alert-danger, .dark-mode .alert-success, .dark-mode .alert-warning, .dark-mode .alert-info {
+            background: #23272b !important;
+            color: #e0e0e0 !important;
+            border-color: #444 !important;
+        }
+        .dark-mode .modal-content {
+            background: #23272b !important;
+        }
+        .dark-mode .progress {
+            background: #222 !important;
+        }
+        .dark-mode .progress-bar {
+            background: #0d6efd !important;
+            color: #fff !important;
+        }
+        .dark-mode .text-dark { color: #e0e0e0 !important; }
+        .dark-mode .text-muted { color: #b0b0b0 !important; }
+        .dark-mode .bg-light { background: #23272b !important; }
+        .dark-mode .bg-white { background: #23272b !important; }
+        .dark-mode .btn-close { filter: invert(1); }
+        .theme-toggle {
+            position: absolute;
+            top: 18px;
+            right: 24px;
+            z-index: 1000;
+        }
+        .op-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+            border-radius: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            cursor: pointer;
+        }
+        .op-card:hover {
+            transform: translateY(-8px) scale(1.04);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+        }
+        .op-avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #e0e7ff, #f0fdfa);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            font-weight: bold;
+            color: #333;
+            margin: 0 auto 1rem auto;
+        }
+        .status-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 0.5em;
+        }
+        .status-active { background: #22c55e; }
+        .status-break { background: #facc15; }
+        .status-inactive { background: #a1a1aa; }
+        .card-anim {
+            animation: fadeInUp 0.7s cubic-bezier(.39,.575,.565,1) both;
+        }
+        @keyframes fadeInUp {
+            0% { opacity: 0; transform: translateY(40px); }
+            100% { opacity: 1; transform: none; }
+        }
+        .dark-mode ::placeholder {
+            color: #b0b0b0 !important;
+            opacity: 1 !important;
+        }
+        .dark-mode :-ms-input-placeholder { /* Internet Explorer 10-11 */
+            color: #b0b0b0 !important;
+        }
+        .dark-mode ::-ms-input-placeholder { /* Microsoft Edge */
+            color: #b0b0b0 !important;
+        }
+    </style>
+</head>
+<body>
+<button class="btn btn-outline-secondary theme-toggle" id="themeToggleBtn" title="Toggle dark/light mode">
+    <span id="themeIcon">🌙</span>
+</button>
+<div class="container mt-4">
+    <h1 class="mb-4">Fleet Manager Dashboard</h1>
+    <h2 class="mb-4">Machine Locations 📍</h2>
+    <!-- Map Section -->
+    <div class="mb-4">
+        <div class="ratio ratio-16x9">
+            <div id="machineMap" style="width:100%;height:100%;min-height:400px;"></div>
+        </div>
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var map = L.map('machineMap').setView([13.0827, 80.2707], 12);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap'
+            }).addTo(map);
+            var machines = [];
+            {% for m in machines %}
+            machines.push({ id: {{ m.id }}, code: '{{ m.machine_id }}', model: '{{ m.model }}', lat: {{ m.latitude|default('null') }}, lon: {{ m.longitude|default('null') }} });
+            {% endfor %}
+            machines.forEach(function(m) {
+                if (m.lat && m.lon) {
+                    var marker = L.marker([m.lat, m.lon]).addTo(map);
+                    marker.bindPopup('<b>' + m.code + '</b><br>' + m.model);
+                    marker.on('mouseover', function(e) {
+                        this.openPopup();
+                    });
+                    marker.on('mouseout', function(e) {
+                        this.closePopup();
+                    });
+                }
+            });
+        });
+        </script>
+    </div>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="alert alert-success" role="alert">
+          {{ messages[0] }}
+        </div>
+      {% endif %}
+    {% endwith %}
+    <div class="row g-4 mb-3">
+      <div class="col-12 text-end">
+        <button type="button" class="btn btn-outline-info" id="refreshStatusBtn">Refresh Status</button>
+        <button type="button" class="btn btn-outline-success ms-2" id="taskTimeEstimationBtn">Task Time Estimation</button>
+      </div>
+    </div>
+    <!-- Task Time Estimation Modal -->
+    <div class="modal fade" id="taskTimeEstimationModal" tabindex="-1" aria-labelledby="taskTimeEstimationLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="taskTimeEstimationLabel">Task Time Estimation</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body p-0">
+            <iframe id="taskTimeEstimationFrame" style="width:100%;height:700px;border:none;"></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row g-4">
+        {% for op in operators %}
+        <div class="col-md-4 col-lg-4">
+            <div class="card op-card card-anim" id="op-card-{{ op.id }}" style="animation-delay: {{ loop.index0 * 0.1 }}s;">
+                <div class="card-body text-center">
+                    <div class="op-avatar">{{ op.username[0]|upper }}</div>
+                    <h5 class="card-title">{{ op.username }}</h5>
+                    <p class="card-text">
+                        <span class="status-dot {% if op.status == 'Active' %}status-active{% elif op.status == 'Break' %}status-break{% else %}status-inactive{% endif %}" id="status-dot-{{ op.id }}"></span>
+                        <span id="status-text-{{ op.id }}" class="fw-bold {% if op.status == 'Active' %}text-success{% elif op.status == 'Break' %}text-warning{% else %}text-secondary{% endif %}">
+                            {% if op.status == 'Active' %}Active{% elif op.status == 'Break' %}On Break{% else %}Inactive{% endif %}
+                        </span>
+                    </p>
+                    {% if op.current_task %}
+                    <div class="mb-2">
+                        <span class="badge bg-primary">Current Task: {{ op.current_task }}</span><br>
+                        <span class="badge bg-info">Machine: {{ op.current_machine }}</span>
+                    </div>
+                    {% endif %}
+                    <p class="mb-1">
+                        <span class="text-muted">Working Time: </span>
+                        <span id="working-time-{{ op.id }}">00:00:00</span>
+                    </p>
+                    <p class="mb-2">
+                        <span class="text-muted">Break Time: </span>
+                        <span id="break-time-{{ op.id }}">00:00:00</span>
+                    </p>
+                    <form method="post" class="row g-2 justify-content-center align-items-end">
+                        <input type="hidden" name="operator_id" value="{{ op.id }}">
+                        <div class="col-12 mb-1">
+                            <input type="text" name="description" class="form-control" required placeholder="Task description">
+                        </div>
+                        <div class="col-7 mb-1">
+                            <input type="text" name="scheduled_time" class="form-control" required placeholder="Scheduled time (e.g. 10:00)">
+                        </div>
+                        <div class="col-12 mb-1">
+                            <select name="machine_id" class="form-select" required>
+                                <option value="" disabled selected>Select machine</option>
+                                {% for machine in machines %}
+                                    <option value="{{ machine.id }}">{{ machine.machine_id }} - {{ machine.model }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-5 mb-1">
+                            <button type="submit" class="btn btn-sm btn-success w-100">Assign</button>
+                        </div>
+                    </form>
+                    <button class="btn btn-outline-primary mt-2" onclick="showDetails('{{ op.username }}', '{{ op.status }}')">View Details</button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+<div style="z-index: 3; position: absolute; height: 100%; width: 100%; padding: 0px; border-width: 0px; margin: 0px; left: 0px; top: 0px; touch-action: pan-x pan-y;"><div style="z-index: 4; position: absolute; left: 50%; top: 50%; width: 100%; will-change: transform; transform: translate(0px, 0px);"><div style="position: absolute; left: 0px; top: 0px; z-index: 104; width: 100%;"></div><div style="position: absolute; left: 0px; top: 0px; z-index: 105; width: 100%;"></div><div style="position: absolute; left: 0px; top: 0px; z-index: 106; width: 100%;"><slot></slot><span id="DC6E57B7-169A-4756-B303-9366460E6709" style="display: none;">To navigate, press the arrow keys.</span></div><div style="position: absolute; left: 0px; top: 0px; z-index: 107; width: 100%;"></div></div></div>
+<script>
+function showDetails(username, status) {
+    alert('Operator: ' + username + '\nStatus: ' + status);
+}
+function formatTime(sec) {
+    sec = parseInt(sec) || 0;
+    var h = Math.floor(sec / 3600);
+    var m = Math.floor((sec % 3600) / 60);
+    var s = sec % 60;
+    function pad(n) { return n < 10 ? '0' + n : n; }
+    return pad(h) + ':' + pad(m) + ':' + pad(s);
+}
+// Store live timer state for each operator
+var operatorTimers = {};
+function updateTimersDisplay() {
+    Object.keys(operatorTimers).forEach(function(opId) {
+        var t = operatorTimers[opId];
+        if (t.status === 'Active') {
+            t.working_seconds++;
+        } else if (t.status === 'Break') {
+            t.break_seconds++;
+        }
+        var workingTime = document.getElementById('working-time-' + opId);
+        var breakTime = document.getElementById('break-time-' + opId);
+        if (workingTime) workingTime.textContent = formatTime(t.working_seconds);
+        if (breakTime) breakTime.textContent = formatTime(t.break_seconds);
+    });
+}
+setInterval(updateTimersDisplay, 1000);
+// Use AJAX to update operator status and timers only when Refresh button is clicked or on page load
+function fetchStatus() {
+    fetch('/api/operator_status')
+        .then(response => response.json())
+        .then(data => {
+            data.operators.forEach(function(op) {
+                var statusSpan = document.getElementById('status-text-' + op.id);
+                var dot = document.getElementById('status-dot-' + op.id);
+                if (statusSpan && dot) {
+                    if (op.status === 'Active') {
+                        statusSpan.textContent = 'Active';
+                        statusSpan.className = 'fw-bold text-success';
+                        dot.className = 'status-dot status-active';
+                    } else if (op.status === 'Break') {
+                        statusSpan.textContent = 'On Break';
+                        statusSpan.className = 'fw-bold text-warning';
+                        dot.className = 'status-dot status-break';
+                    } else {
+                        statusSpan.textContent = 'Inactive';
+                        statusSpan.className = 'fw-bold text-secondary';
+                        dot.className = 'status-dot status-inactive';
+                    }
+                }
+                // Update timer state from DB
+                operatorTimers[op.id] = {
+                    status: op.status,
+                    working_seconds: op.working_seconds,
+                    break_seconds: op.break_seconds
+                };
+                // Also update display immediately
+                var workingTime = document.getElementById('working-time-' + op.id);
+                var breakTime = document.getElementById('break-time-' + op.id);
+                if (workingTime) workingTime.textContent = formatTime(op.working_seconds);
+                if (breakTime) breakTime.textContent = formatTime(op.break_seconds);
+            });
+        });
+}
+document.addEventListener('DOMContentLoaded', function() {
+    fetchStatus();
+    document.getElementById('refreshStatusBtn').addEventListener('click', function(e) {
+        e.preventDefault();
+        fetchStatus();
+    });
+    document.getElementById('taskTimeEstimationBtn').addEventListener('click', function() {
+        window.open('http://localhost:5002/', '_blank');
+    });
+});
+(function() {
+    const btn = document.getElementById('themeToggleBtn');
+    const icon = document.getElementById('themeIcon');
+    function setTheme(dark) {
+        if (dark) {
+            document.body.classList.add('dark-mode');
+            icon.textContent = '☀️';
+            localStorage.setItem('theme', 'dark');
+        } else {
+            document.body.classList.remove('dark-mode');
+            icon.textContent = '🌙';
+            localStorage.setItem('theme', 'light');
+        }
+    }
+    btn.addEventListener('click', function() {
+        setTheme(!document.body.classList.contains('dark-mode'));
+    });
+    setTheme(localStorage.getItem('theme') === 'dark');
+})();
+</script>
+</body>
+</html>
